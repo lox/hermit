@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cashapp/hermit/errors"
+	"github.com/cashapp/hermit/git"
 	"github.com/cashapp/hermit/ui"
 	"github.com/cashapp/hermit/util"
 )
@@ -17,16 +18,17 @@ type GitSource struct {
 	sourceDir string
 	path      string
 	runner    util.CommandRunner
+	gitOp     git.Operator
 }
 
 // NewGitSource returns a new GitSource
-func NewGitSource(uri, sourceDir string, runner util.CommandRunner) *GitSource {
+func NewGitSource(uri, sourceDir string, runner util.CommandRunner, gitOp git.Operator) *GitSource {
 	key := util.Hash(uri)
 	path := filepath.Join(sourceDir, key)
 	return &GitSource{&uriFS{
 		uri: uri,
 		FS:  os.DirFS(path),
-	}, sourceDir, path, runner}
+	}, sourceDir, path, runner, gitOp}
 }
 
 func (s *GitSource) Sync(p *ui.UI, force bool) error { // nolint: golint
@@ -38,7 +40,7 @@ func (s *GitSource) Sync(p *ui.UI, force bool) error { // nolint: golint
 			return errors.WithStack(err)
 		}
 
-		err = syncGit(task, s.sourceDir, s.fs.uri, s.path, s.runner)
+		err = syncGit(task, s.sourceDir, s.fs.uri, s.path, s.runner, s.gitOp)
 		// If the sync failed while the repo had already been cloned, log a warning
 		// If the repo has not yet been cloned, fail.
 		if err != nil {
@@ -70,7 +72,7 @@ func (s *GitSource) ensureSourcesDirExists() error {
 }
 
 // Atomically clone git repo.
-func syncGit(b *ui.Task, dir, source, finalDest string, runner util.CommandRunner) (err error) {
+func syncGit(b *ui.Task, dir, source, finalDest string, runner util.CommandRunner, gitOp git.Operator) (err error) {
 	task := b.SubProgress("sync", 1)
 	defer func() {
 		task.Done()
@@ -79,24 +81,40 @@ func syncGit(b *ui.Task, dir, source, finalDest string, runner util.CommandRunne
 			err = errors.WithStack(os.Chtimes(finalDest, now, now))
 		}
 	}()
+
 	// First, if a git repo exists, just pull.
 	info, _ := os.Stat(filepath.Join(finalDest, ".git"))
 	if info != nil {
-		err = runner.RunInDir(b, finalDest, "git", "pull")
+		if gitOp != nil {
+			err = gitOp.Pull(task, finalDest, git.PullOpts{})
+		} else {
+			err = runner.RunInDir(b, finalDest, "git", "pull")
+		}
 		if err == nil {
 			return nil
 		}
 		// If pull fails, assume the repo is corrupted and just try and re-clone it.
 	}
+
 	// No git repo, clone down to temporary directory.
 	dest, err := os.MkdirTemp(dir, filepath.Base(finalDest)+"-*")
 	if err != nil {
 		return errors.WithStack(err)
 	}
 	defer os.RemoveAll(dest)
-	if err = runner.RunInDir(b, dest, "git", "clone", "--depth=1", source, dest); err != nil {
+
+	if gitOp != nil {
+		err = gitOp.Clone(task, source, git.CloneOpts{
+			TargetDir: dest,
+			Shallow:   true,
+		})
+	} else {
+		err = runner.RunInDir(b, dest, "git", "clone", "--depth=1", source, dest)
+	}
+	if err != nil {
 		return errors.WithStack(err)
 	}
+
 	_ = os.RemoveAll(finalDest)
 	// And finally, rename it into place.
 	if err = os.Rename(dest, finalDest); err != nil && !os.IsExist(err) { // Prevent races.

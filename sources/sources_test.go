@@ -82,7 +82,7 @@ func TestForURIsIntegration(t *testing.T) {
 			"https://github.com/other/repo2.git",
 			"git@github.com:owner/repo3.git",
 		}
-		sources, err := ForURIs(l, "testdir", "testenv", uris, rewriter)
+		sources, err := ForURIs(l, "testdir", "testenv", uris, nil, rewriter)
 
 		assert.NoError(t, err)
 		assert.Equal(t, len(uris), len(sources.sources))
@@ -100,7 +100,7 @@ func TestForURIsIntegration(t *testing.T) {
 		}
 
 		uris := []string{"https://github.com/owner/repo.git"}
-		_, err := ForURIs(l, "testdir", "testenv", uris, errorRewriter)
+		_, err := ForURIs(l, "testdir", "testenv", uris, nil, errorRewriter)
 
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "rewriter error")
@@ -112,7 +112,7 @@ func TestForURIsIntegration(t *testing.T) {
 		}
 
 		uris := []string{"https://github.com/owner/repo.git"}
-		_, err := ForURIs(l, "testdir", "testenv", uris, invalidRewriter)
+		_, err := ForURIs(l, "testdir", "testenv", uris, nil, invalidRewriter)
 
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "unsupported source")

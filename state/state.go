@@ -13,6 +13,7 @@ import (
 	"github.com/cashapp/hermit/archive"
 	"github.com/cashapp/hermit/cache"
 	"github.com/cashapp/hermit/errors"
+	"github.com/cashapp/hermit/git"
 	"github.com/cashapp/hermit/internal/dao"
 	"github.com/cashapp/hermit/manifest"
 	"github.com/cashapp/hermit/platform"
@@ -64,77 +65,68 @@ type State struct {
 	dao         *dao.DAO
 	lock        string
 	lockTimeout time.Duration
+	gitOp       git.Operator
 }
 
 // Open the global Hermit state.
 //
 // See cache.Open for details on downloadStrategies.
-func Open(stateDir string, config Config, cache *cache.Cache) (*State, error) {
+func Open(root string, config Config, cache *cache.Cache, gitOp git.Operator) (*State, error) {
+	root = util.RealPath(root)
+	state := &State{
+		root:        root,
+		cacheDir:    filepath.Join(root, "cache"),
+		pkgDir:      filepath.Join(root, "packages"),
+		sourcesDir:  filepath.Join(root, "sources"),
+		binaryDir:   filepath.Join(root, "bin"),
+		config:      config,
+		lockTimeout: config.LockTimeout,
+		gitOp:       gitOp,
+		cache:       cache,
+	}
+
 	if config.Builtin == nil {
 		return nil, errors.Errorf("state.Config.Builtin not provided")
 	}
 
-	pkgDir := filepath.Join(stateDir, "pkg")
-	cacheDir := filepath.Join(stateDir, "cache")
-	sourcesDir := filepath.Join(stateDir, "sources")
-	binaryDir := filepath.Join(stateDir, "binaries")
-	dao, err := dao.Open(stateDir)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	if config.Sources == nil {
-		config.Sources = DefaultSources
-	}
-
-	autoMirrors, err := validateAndCompileAutoMirrors(config)
+	pkgDir := filepath.Join(root, "pkg")
+	cacheDir := filepath.Join(root, "cache")
+	sourcesDir := filepath.Join(root, "sources")
+	binaryDir := filepath.Join(root, "binaries")
+	dao, err := dao.Open(root)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
 
-	s := &State{
-		dao:         dao,
-		autoMirrors: autoMirrors,
-		root:        stateDir,
-		cacheDir:    cacheDir,
-		sourcesDir:  sourcesDir,
-		binaryDir:   binaryDir,
-		config:      config,
-		pkgDir:      pkgDir,
-		cache:       cache,
-		lock:        filepath.Join(stateDir, ".lock"),
-		lockTimeout: config.LockTimeout,
-	}
-	return s, nil
-}
-
-func validateAndCompileAutoMirrors(config Config) ([]precompiledAutoMirror, error) {
-	autoMirrors := []precompiledAutoMirror{}
-	for _, mirror := range config.AutoMirrors {
+	// Compile auto-mirrors
+	autoMirrors := make([]precompiledAutoMirror, len(config.AutoMirrors))
+	for i, mirror := range config.AutoMirrors {
 		re, err := regexp.Compile(mirror.Origin)
 		if err != nil {
-			return nil, errors.Errorf("auto-mirror key %q is not a valid regular expression", mirror.Origin)
+			return nil, errors.Wrapf(err, "invalid auto-mirror origin pattern: %s", mirror.Origin)
 		}
-		pam := precompiledAutoMirror{
-			re:     re,
-			mirror: mirror.Mirror,
-			groups: map[string]int{},
-		}
-		for id, name := range re.SubexpNames() {
-			pam.groups[name] = id
-		}
-		os.Expand(mirror.Mirror, func(name string) string {
-			_, ok := pam.groups[name]
-			if !ok {
-				err = errors.Errorf("unknown capture group %q in auto-mirror", name)
+		groups := make(map[string]int)
+		for i, name := range re.SubexpNames() {
+			if name != "" {
+				groups[name] = i
 			}
-			return ""
-		})
-		if err != nil {
-			return nil, errors.WithStack(err)
 		}
-		autoMirrors = append(autoMirrors, pam)
+		autoMirrors[i] = precompiledAutoMirror{
+			re:     re,
+			groups: groups,
+			mirror: mirror.Mirror,
+		}
 	}
-	return autoMirrors, nil
+
+	state.dao = dao
+	state.autoMirrors = autoMirrors
+	state.cacheDir = cacheDir
+	state.sourcesDir = sourcesDir
+	state.binaryDir = binaryDir
+	state.pkgDir = pkgDir
+	state.lock = filepath.Join(root, ".lock")
+
+	return state, nil
 }
 
 // Resolve package reference without an active environment.
@@ -200,7 +192,7 @@ func (s *State) resolver(l *ui.UI) (*manifest.Resolver, error) {
 
 // Sources associated with the State.
 func (s *State) Sources(l *ui.UI) (*sources.Sources, error) {
-	ss, err := sources.ForURIs(l, s.SourcesDir(), "", s.config.Sources)
+	ss, err := sources.ForURIs(l, s.SourcesDir(), "", s.config.Sources, s.gitOp)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}

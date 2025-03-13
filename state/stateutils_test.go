@@ -64,11 +64,11 @@ func (f *StateTestFixture) State() *state.State {
 	}
 	f.roots[root] = true
 	client := f.Server.Client()
-	cache, err := cache.Open(root, nil, client, client)
+	cache, err := cache.Open(root, nil, client, client, nil)
 	assert.NoError(f.t, err)
 	sta, err := state.Open(root, state.Config{
 		Builtin: sources.NewBuiltInSource(vfs.InMemoryFS(nil)),
-	}, cache)
+	}, cache, nil)
 	assert.NoError(f.t, err)
 	return sta
 }

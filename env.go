@@ -263,7 +263,7 @@ func getSources(l *ui.UI, envDir string, config *Config, state *state.State, def
 		configuredSources = defaultSources
 	}
 
-	ss, err := sources.ForURIs(l, state.SourcesDir(), envDir, configuredSources, sourceRewriters...)
+	ss, err := sources.ForURIs(l, state.SourcesDir(), envDir, configuredSources, nil, sourceRewriters...)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}

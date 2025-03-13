@@ -47,13 +47,11 @@ func NewEnvTestFixture(t *testing.T, handler http.Handler) *EnvTestFixture {
 	assert.NoError(t, err)
 
 	server := httptest.NewServer(handler)
-	client := server.Client()
-	cache, err := cache.Open(stateDir, nil, client, client)
+	cache, err := cache.Open(stateDir, nil, http.DefaultClient, http.DefaultClient, nil)
 	assert.NoError(t, err)
 	sta, err := state.Open(stateDir, state.Config{
-		Sources: []string{},
 		Builtin: sources.NewBuiltInSource(vfs.InMemoryFS(nil)),
-	}, cache)
+	}, nil, nil)
 	assert.NoError(t, err)
 	info, err := hermit.LoadEnvInfo(envDir)
 	assert.NoError(t, err)

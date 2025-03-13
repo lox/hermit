@@ -11,6 +11,7 @@ import (
 	"github.com/cashapp/hermit/util"
 
 	"github.com/cashapp/hermit/errors"
+	"github.com/cashapp/hermit/git"
 	"github.com/cashapp/hermit/ui"
 )
 
@@ -32,13 +33,15 @@ type Sources struct {
 	sources        []Source
 	dir            string
 	isSynchronised bool // Keep track if the sources have been synchronised to avoid double synchronisation
+	gitOp          git.Operator
 }
 
 // New returns a new set of sources
-func New(stateDir string, sources []Source) *Sources {
+func New(stateDir string, sources []Source, gitOp git.Operator) *Sources {
 	return &Sources{
 		dir:     stateDir,
 		sources: sources,
+		gitOp:   gitOp,
 	}
 }
 
@@ -73,7 +76,7 @@ func (s *Sources) Sync(p *ui.UI, force bool) error {
 type URLRewriter func(uri string) (string, error)
 
 // ForURIs returns Source instances for given uri strings
-func ForURIs(b *ui.UI, dir, env string, uris []string, rewriters ...URLRewriter) (*Sources, error) {
+func ForURIs(b *ui.UI, dir, env string, uris []string, gitOp git.Operator, rewriters ...URLRewriter) (*Sources, error) {
 	sources := make([]Source, 0, len(uris))
 	for _, uri := range uris {
 		// Apply each rewriter in sequence
@@ -86,7 +89,7 @@ func ForURIs(b *ui.UI, dir, env string, uris []string, rewriters ...URLRewriter)
 			transformedURI = rewritten
 		}
 
-		s, err := getSource(b, transformedURI, dir, env)
+		s, err := getSource(b, transformedURI, dir, env, gitOp)
 		if err != nil {
 			return nil, errors.WithStack(err)
 		}
@@ -97,15 +100,16 @@ func ForURIs(b *ui.UI, dir, env string, uris []string, rewriters ...URLRewriter)
 	return &Sources{
 		dir:     dir,
 		sources: sources,
+		gitOp:   gitOp,
 	}, nil
 }
 
-func getSource(b *ui.UI, source, dir, env string) (Source, error) {
+func getSource(b *ui.UI, source, dir, env string, gitOp git.Operator) (Source, error) {
 	task := b.Task(source)
 	defer task.Done()
 
 	if strings.HasSuffix(source, ".git") {
-		return NewGitSource(source, dir, &util.RealCommandRunner{}), nil
+		return NewGitSource(source, dir, &util.RealCommandRunner{}, gitOp), nil
 	}
 
 	uri, err := url.Parse(source)

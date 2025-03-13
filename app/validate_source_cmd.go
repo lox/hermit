@@ -29,7 +29,7 @@ func (g *validateSourceCmd) Run(l *ui.UI, env *hermit.Env, sta *state.State) err
 			return errors.WithStack(err)
 		}
 	} else {
-		srcs, err = sources.ForURIs(l, sta.SourcesDir(), "", []string{g.Source})
+		srcs, err = sources.ForURIs(l, sta.SourcesDir(), "", []string{g.Source}, nil)
 		if err != nil {
 			return errors.WithStack(err)
 		}

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/cashapp/hermit/errors"
+	"github.com/cashapp/hermit/git"
 	"github.com/cashapp/hermit/ui"
 	"github.com/cashapp/hermit/util"
 )
@@ -24,13 +25,26 @@ func (s *gitSource) Download(b *ui.Task, cache *Cache, checksum string) (string,
 	base := BasePath(checksum, s.URL)
 	checkoutDir := filepath.Join(cache.root, base)
 	repo, tag := parseGitURL(s.URL)
-	args := []string{"git", "clone", "--depth=1", repo, checkoutDir}
-	if tag != "" {
-		args = append(args, "--branch="+tag)
-	}
-	err := util.RunInDir(b, cache.root, args...)
-	if err != nil {
-		return "", "", "", errors.WithStack(err)
+
+	// Use git operator if available, otherwise fall back to direct git command
+	if cache.gitOp != nil {
+		err := cache.gitOp.Clone(b, repo, git.CloneOpts{
+			TargetDir: checkoutDir,
+			Reference: tag,
+			Shallow:   true,
+		})
+		if err != nil {
+			return "", "", "", errors.WithStack(err)
+		}
+	} else {
+		args := []string{"git", "clone", "--depth=1", repo, checkoutDir}
+		if tag != "" {
+			args = append(args, "--branch="+tag)
+		}
+		err := util.RunInDir(b, cache.root, args...)
+		if err != nil {
+			return "", "", "", errors.WithStack(err)
+		}
 	}
 
 	bts, err := util.CaptureInDir(b, checkoutDir, "git", "rev-parse", "HEAD")

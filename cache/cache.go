@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cashapp/hermit/errors"
+	"github.com/cashapp/hermit/git"
 	"github.com/cashapp/hermit/ui"
 	"github.com/cashapp/hermit/util"
 )
@@ -21,6 +22,7 @@ type Cache struct {
 	root               string
 	httpClient         *http.Client
 	fastFailHTTPClient *http.Client
+	gitOp              git.Operator
 }
 
 // BasePath returns the subfolder in the cache path for the given file
@@ -38,9 +40,8 @@ func BasePath(checksum, uri string) string {
 // "fastFailClient" is a HTTP client configured to fail quickly if a remote
 // server is unavailable, for use in optional checks.
 //
-// "strategies" are used to download URLS, attempted in order.
-// A default raw HTTP download strategy will always be the first strategy attempted.
-func Open(stateDir string, selector PackageSourceSelector, client *http.Client, fastFailClient *http.Client) (*Cache, error) {
+// "gitOp" is used for git operations. If nil, a default implementation will be used.
+func Open(stateDir string, selector PackageSourceSelector, client *http.Client, fastFailClient *http.Client, gitOp git.Operator) (*Cache, error) {
 	stateDir = filepath.Join(stateDir, "cache")
 	err := os.MkdirAll(stateDir, os.ModePerm) //nolint:gosec
 	if err != nil {
@@ -54,6 +55,7 @@ func Open(stateDir string, selector PackageSourceSelector, client *http.Client, 
 		GetSource:          selector,
 		httpClient:         client,
 		fastFailHTTPClient: fastFailClient,
+		gitOp:              gitOp,
 	}
 	return c, nil
 }

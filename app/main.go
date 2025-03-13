@@ -17,6 +17,7 @@ import (
 
 	"github.com/cashapp/hermit"
 	"github.com/cashapp/hermit/cache"
+	"github.com/cashapp/hermit/git"
 	"github.com/cashapp/hermit/github"
 	"github.com/cashapp/hermit/sources"
 	"github.com/cashapp/hermit/state"
@@ -242,7 +243,16 @@ func Main(config Config) {
 		}
 	}
 
-	cache, err := cache.Open(hermit.UserStateDir, getSource, defaultHTTPClient, config.fastHTTPClient(p))
+	// Create git operator with authentication
+	gitAuth := git.Auth{
+		Token: githubToken,
+		ShouldAuth: func(owner, repo string) bool {
+			return matcher != nil && matcher(owner, repo)
+		},
+	}
+	gitOp := git.NewCLIOperator(hermit.UserStateDir, gitAuth)
+
+	cache, err := cache.Open(hermit.UserStateDir, getSource, defaultHTTPClient, config.fastHTTPClient(p), gitOp)
 	if err != nil {
 		log.Fatalf("failed to open cache: %s", err)
 	}
@@ -265,7 +275,7 @@ func Main(config Config) {
 	}
 
 	config.State.LockTimeout = cli.getLockTimeout()
-	sta, err = state.Open(hermit.UserStateDir, config.State, cache)
+	sta, err = state.Open(hermit.UserStateDir, config.State, cache, gitOp)
 	if err != nil {
 		log.Fatalf("failed to open state: %s", err)
 	}
